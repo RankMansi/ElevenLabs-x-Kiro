@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Echoes — Hear the history of this file",
+  "description": "Generates a voiced radio drama from the git history of the currently open file using ElevenLabs Text-to-Dialogue",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": ".venv/bin/python scripts/echoes.py \"${file}\"",
+    "timeout": 180
+  }
+}

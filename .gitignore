@@ -1,0 +1,20 @@
+# Environment — never commit API keys
+.env
+
+# Virtual environment
+.venv/
+
+# Cached Voice Design IDs (regenerates automatically)
+.echoes_voices/
+
+# Generated audio files
+echoes_*.mp3
+/tmp/echoes_*.mp3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store

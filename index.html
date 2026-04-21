@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECHOES — Git History as Radio Drama</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;700;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--black:#020408;--deep:#050a14;--g-gold:#c8873a;--g-fire:#ff5500;--g-core:#fff4e0;--blue:#1a6aaa;--ice:#00d4ff;--star:#d8e8f8;--text:#e8e0d0;--muted:#7a7060;--dim:#3a3028;--amber:#c8a96e;}
+*{box-sizing:border-box;margin:0;padding:0}html{font-size:16px;height:100%}
+body{background:var(--black);color:var(--text);font-family:'Space Mono',monospace;min-height:100vh;overflow-x:hidden;cursor:default;}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)' opacity='0.055'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.7;mix-blend-mode:overlay;animation:grain-shift 0.18s steps(1) infinite;}
+@keyframes grain-shift{0%{transform:translate(0,0)}20%{transform:translate(-1%,-1%)}40%{transform:translate(1%,0)}60%{transform:translate(0,1%)}80%{transform:translate(-1%,1%)}100%{transform:translate(1%,-1%)}}
+#letterbox-top,#letterbox-bottom{position:fixed;left:0;right:0;height:52px;background:var(--black);z-index:200;pointer-events:none;}
+#letterbox-top{top:0;border-bottom:1px solid rgba(200,160,60,0.12)}
+#letterbox-bottom{bottom:0;border-top:1px solid rgba(200,160,60,0.12)}
+#canvas-bg{position:fixed;inset:0;z-index:0}
+#gargantua-wrap{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;pointer-events:none;width:min(700px,90vw);aspect-ratio:1;}
+#gargantua-canvas{width:100%;height:100%}
+#app{position:relative;z-index:10;min-height:100vh;display:flex;flex-direction:column;padding:52px 0 52px;}
+#opening{position:fixed;inset:0;z-index:500;background:var(--black);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+#opening .studio-line{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.5em;color:var(--dim);text-transform:uppercase;opacity:0;animation:fade-in .8s ease forwards;}
+#opening .main-title{font-family:'Big Shoulders Display',sans-serif;font-size:clamp(60px,12vw,120px);font-weight:900;letter-spacing:.08em;color:var(--text);text-transform:uppercase;opacity:0;animation:title-rise 1.2s cubic-bezier(.16,1,.3,1) .6s forwards;text-shadow:0 0 80px rgba(200,160,60,0.3);}
+#opening .title-line2{font-family:'DM Serif Display',serif;font-style:italic;font-size:clamp(14px,2.5vw,22px);color:var(--amber);letter-spacing:.25em;opacity:0;animation:fade-in .8s ease 1.4s forwards;}
+#opening .year-tag{font-size:10px;letter-spacing:.4em;color:var(--dim);opacity:0;animation:fade-in .8s ease 1.9s forwards;margin-top:8px;}
+#opening::after{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,var(--black));pointer-events:none;}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes title-rise{from{opacity:0;transform:translateY(30px) skewX(-2deg)}to{opacity:1;transform:translateY(0) skewX(0deg)}}
+.screen{display:none;width:100%;flex:1}.screen.active{display:flex;flex-direction:column}
+#s-landing{align-items:center;justify-content:flex-end;padding-bottom:80px;gap:0;}
+.hud-badge{position:fixed;top:60px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.35em;color:var(--dim);text-transform:uppercase;z-index:100;display:flex;align-items:center;gap:16px;}
+.hud-badge::before,.hud-badge::after{content:'';display:block;width:60px;height:.5px;background:var(--dim);}
+.land-stage{width:100%;max-width:1000px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 60px;position:relative;height:440px;}
+.name-plate{font-family:'Big Shoulders Display',sans-serif;font-size:13px;letter-spacing:.3em;color:var(--muted);text-transform:uppercase;text-align:center;margin-bottom:6px;}
+.cine-bubble{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);min-width:240px;max-width:320px;margin-bottom:14px;text-align:center;opacity:0;transition:opacity .4s}.cine-bubble.show{opacity:1}
+.cine-bubble-inner{display:inline-block;background:rgba(4,10,20,0.88);border-top:1.5px solid;padding:12px 18px;font-family:'DM Serif Display',serif;font-style:italic;font-size:15px;line-height:1.5;color:var(--text);letter-spacing:.02em;position:relative;}
+.bubble-l .cine-bubble-inner{border-color:var(--ice)}.bubble-r .cine-bubble-inner{border-color:var(--amber);}
+.cine-bubble-inner::before{content:attr(data-who);display:block;font-family:'Space Mono',monospace;font-style:normal;font-size:8px;letter-spacing:.3em;margin-bottom:5px;opacity:.5;text-transform:uppercase;}
+.bubble-l .cine-bubble-inner::before{color:var(--ice)}.bubble-r .cine-bubble-inner::before{color:var(--amber)}
+.char-col{display:flex;flex-direction:column;align-items:center;gap:0;position:relative;z-index:5;}
+.land-input-wrap{width:100%;max-width:680px;padding:0 20px;position:relative;z-index:10;}
+.field-label{font-size:8px;letter-spacing:.4em;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:8px;}
+.input-row{display:flex;gap:0;border:1px solid rgba(200,135,58,0.25);background:rgba(4,8,16,0.85);transition:border-color .2s,box-shadow .2s;}
+.input-row:focus-within{border-color:rgba(200,135,58,0.6);box-shadow:0 0 0 1px rgba(200,135,58,0.15),0 0 40px rgba(200,100,0,0.08);}
+.url-input{flex:1;background:transparent;border:none;outline:none;color:var(--amber);font-family:'Space Mono',monospace;font-size:12.5px;padding:16px 20px;letter-spacing:.04em;}
+.url-input::placeholder{color:rgba(120,90,40,0.5)}
+.cta-btn{background:rgba(200,135,58,0.12);border:none;border-left:1px solid rgba(200,135,58,0.25);color:var(--amber);font-family:'Big Shoulders Display',sans-serif;font-weight:700;font-size:13px;letter-spacing:.2em;padding:0 32px;cursor:pointer;text-transform:uppercase;transition:background .2s;white-space:nowrap;}
+.cta-btn:hover{background:rgba(200,135,58,0.22)}.cta-btn:disabled{opacity:.3;cursor:not-allowed}
+.under-input{margin-top:12px;display:flex;align-items:center;gap:20px;font-size:9px;letter-spacing:.2em;color:var(--dim);}
+.under-input span{color:rgba(120,90,40,0.6)}
+.err-msg{margin-top:10px;font-size:11px;color:#e05050;letter-spacing:.06em;opacity:0;transition:opacity .3s;}.err-msg.show{opacity:1}
+.mouth-open{display:none}.mouth-closed{display:block}.speaking-mouth .mouth-open{display:block}.speaking-mouth .mouth-closed{display:none}
+</style>
+<style>
+#s-briefing{align-items:center;justify-content:center;gap:0;padding:40px 20px;}
+.briefing-inner{width:100%;max-width:640px;display:flex;flex-direction:column;gap:0;}
+.briefing-title{font-family:'Big Shoulders Display',sans-serif;font-weight:900;font-size:clamp(28px,5vw,48px);letter-spacing:.15em;color:var(--text);text-transform:uppercase;border-bottom:1px solid var(--dim);padding-bottom:16px;margin-bottom:24px;display:flex;align-items:baseline;justify-content:space-between;}
+.briefing-title .mission-id{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.15em;font-weight:400;}
+.log-block{display:flex;flex-direction:column;gap:0;margin-bottom:24px;}
+.log-entry{display:flex;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid rgba(58,48,40,0.5);opacity:0;transform:translateX(-8px);transition:opacity .4s,transform .4s,color .3s;font-size:12px;letter-spacing:.06em;color:var(--dim);}
+.log-entry.active{opacity:1;transform:none;color:var(--text)}.log-entry.done{opacity:.4;transform:none;color:var(--dim)}
+.log-entry .step-num{font-family:'Big Shoulders Display',sans-serif;font-size:14px;color:var(--dim);min-width:24px;padding-top:1px;}
+.log-entry.active .step-num{color:var(--amber)}.log-entry.done .step-num{color:rgba(58,48,40,0.8)}
+.log-entry .step-bar{width:3px;height:3px;border-radius:50%;background:var(--dim);flex-shrink:0;margin-top:5px;transition:all .3s;}
+.log-entry.active .step-bar{background:var(--amber);box-shadow:0 0 8px var(--amber);animation:bar-pulse 1s ease-in-out infinite;}
+.log-entry.done .step-bar{background:#1a9a50;width:6px;height:6px;border-radius:1px}
+@keyframes bar-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.5)}}
+.tars-panel{background:rgba(200,135,58,0.04);border:1px solid rgba(200,135,58,0.15);padding:16px 20px;display:flex;align-items:center;gap:20px;}
+.tars-label{font-size:9px;letter-spacing:.3em;color:var(--dim);text-transform:uppercase;line-height:2;white-space:nowrap;}
+.tars-bars{flex:1;display:flex;flex-direction:column;gap:8px}
+.tars-bar-row{display:flex;align-items:center;gap:10px}
+.tars-bar-label{font-size:8px;letter-spacing:.2em;color:var(--dim);min-width:80px;text-transform:uppercase}
+.tars-bar-track{flex:1;height:2px;background:var(--dim)}.tars-bar-fill{height:100%;background:var(--amber);transition:width 2s ease}
+.tars-bar-val{font-size:9px;color:var(--amber);min-width:30px;text-align:right}
+.gravity-watch{margin-top:20px;font-family:'Space Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:.15em;display:flex;align-items:center;gap:12px;}
+.gravity-watch .colon{animation:blink 1s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+#s-episode{flex-direction:column;align-items:center;padding:0 20px 80px;gap:0;}
+.ep-title-block{width:100%;max-width:1100px;padding:24px 0 20px;border-bottom:1px solid var(--dim);margin-bottom:0;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;}
+.ep-show{font-size:9px;letter-spacing:.4em;color:var(--dim);text-transform:uppercase;margin-bottom:6px;}
+.ep-title-main{font-family:'Big Shoulders Display',sans-serif;font-weight:900;font-size:clamp(20px,3.5vw,36px);letter-spacing:.06em;text-transform:uppercase;color:var(--text);line-height:1.1;}
+.ep-meta-right{text-align:right;font-size:10px;letter-spacing:.12em;color:var(--dim);line-height:2;white-space:nowrap;flex-shrink:0;}
+.ep-main{width:100%;max-width:1100px;display:grid;grid-template-columns:240px 1fr 280px;gap:0;min-height:360px;border-bottom:1px solid var(--dim);}
+.char-panel{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:20px;border-right:1px solid var(--dim);position:relative;overflow:hidden;}
+.char-panel:last-child{border-right:none;border-left:1px solid var(--dim);}
+.char-panel .panel-label{font-size:8px;letter-spacing:.35em;color:var(--dim);text-transform:uppercase;position:absolute;top:20px;left:50%;transform:translateX(-50%);white-space:nowrap;}
+.char-aura{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:160px;height:200px;border-radius:50%;opacity:0;transition:opacity .6s;pointer-events:none;}
+.alex-aura{background:radial-gradient(ellipse at 50% 100%,rgba(0,180,255,0.15) 0%,transparent 70%)}
+.dev-aura{background:radial-gradient(ellipse at 50% 100%,rgba(200,135,58,0.15) 0%,transparent 70%)}
+.char-panel.active-speaker .char-aura{opacity:1}
+.speak-bar{width:80px;height:2px;background:var(--dim);margin-top:10px;position:relative;overflow:hidden;}
+.speak-bar-fill{position:absolute;left:0;top:0;height:100%;width:0%;background:var(--amber);}
+.char-panel.active-speaker.alex-panel .speak-bar-fill{background:var(--ice);width:100%;animation:speak-wave 0.4s ease-in-out infinite}
+.char-panel.active-speaker.dev-panel .speak-bar-fill{background:var(--amber);width:100%;animation:speak-wave 0.4s ease-in-out infinite}
+@keyframes speak-wave{0%{transform:scaleX(0.3) translateX(-80%)}50%{transform:scaleX(1) translateX(0)}100%{transform:scaleX(0.3) translateX(80%)}}
+.stage-panel{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:20px 20px 0;position:relative;gap:0;background:rgba(2,4,8,0.3);}
+.stage-bg-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Big Shoulders Display',sans-serif;font-weight:900;font-size:100px;letter-spacing:.05em;color:rgba(58,48,40,0.06);text-transform:uppercase;pointer-events:none;user-select:none;white-space:nowrap;}
+.subtitle-track{width:100%;background:rgba(4,8,16,0.92);border-top:1px solid var(--dim);min-height:100px;padding:16px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;}
+.sub-who{font-size:8px;letter-spacing:.35em;text-transform:uppercase;color:var(--dim);font-family:'Space Mono',monospace;}
+.sub-who.alex-who{color:var(--ice)}.sub-who.dev-who{color:var(--amber)}.sub-who.ad-who{color:#a0d070}
+.sub-text{font-family:'DM Serif Display',serif;font-style:italic;font-size:clamp(15px,2vw,19px);line-height:1.5;text-align:center;color:var(--text);min-height:48px;}
+.sub-cursor{display:inline-block;width:2px;height:1em;background:var(--amber);vertical-align:text-bottom;animation:cursor-blink .7s step-end infinite;margin-left:2px;}
+@keyframes cursor-blink{0%,100%{opacity:1}50%{opacity:0}}
+.chapters-block{width:100%;max-width:1100px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;border-bottom:1px solid var(--dim);}
+.chapter-item{padding:14px 16px;border-right:1px solid var(--dim);cursor:pointer;transition:background .15s;display:flex;flex-direction:column;gap:4px;}
+.chapter-item:last-child{border-right:none}.chapter-item:hover{background:rgba(200,135,58,0.04)}.chapter-item.active{background:rgba(200,135,58,0.06)}
+.ch-num{font-size:8px;letter-spacing:.25em;color:var(--dim)}.chapter-item.active .ch-num{color:var(--amber)}
+.ch-time{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:2px}
+.ch-title{font-size:11px;letter-spacing:.04em;color:var(--text);line-height:1.3}
+.ch-bar{height:1px;background:var(--dim);margin-top:6px;position:relative}.ch-bar::after{content:'';position:absolute;left:0;top:0;height:100%;width:0%;background:var(--amber);transition:width .5s linear;}
+.chapter-item.active .ch-bar::after{width:100%}
+.player-strip{width:100%;max-width:1100px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:0;border-bottom:1px solid var(--dim);min-height:72px;}
+.player-left{padding:0 24px;display:flex;align-items:center;gap:16px;border-right:1px solid var(--dim);}
+.play-btn{width:42px;height:42px;background:transparent;border:1px solid rgba(200,135,58,0.4);color:var(--amber);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;}
+.play-btn:hover{background:rgba(200,135,58,0.1);border-color:var(--amber);box-shadow:0 0 20px rgba(200,100,0,0.2)}
+.viz-wrap{padding:0 24px;display:flex;align-items:center;flex-direction:column;gap:4px;position:relative;overflow:hidden;}
+#waveform-canvas{width:100%;height:40px;display:block}
+.progress-track{width:100%;height:2px;background:rgba(58,48,40,0.6);cursor:pointer;position:relative;}
+.progress-fill{height:100%;background:var(--amber);width:0%;transition:width .3s linear}
+.progress-time{position:absolute;right:0;top:-18px;font-size:9px;color:var(--muted);letter-spacing:.1em;}
+.player-right{padding:0 24px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;border-left:1px solid var(--dim);min-width:140px;}
+.dl-link{font-size:9px;letter-spacing:.25em;color:var(--dim);text-transform:uppercase;text-decoration:none;border:1px solid var(--dim);padding:5px 12px;transition:all .15s;display:block;}
+.dl-link:hover{border-color:var(--amber);color:var(--amber)}
+.reset-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:9px;letter-spacing:.2em;text-transform:uppercase;font-family:'Space Mono',monospace;padding:4px 0;transition:color .15s;}
+.reset-btn:hover{color:var(--text)}
+.char-svg{transition:filter .4s;animation:char-float var(--ft,4s) ease-in-out infinite var(--fd,0s);}
+@keyframes char-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.char-panel.active-speaker .char-svg{filter:drop-shadow(0 0 16px var(--glow,#00d4ff)) drop-shadow(0 0 40px var(--glow-dim,rgba(0,180,255,0.3)));}
+.char-panel.active-speaker .char-svg .suit-body{animation:suit-breathe .5s ease-in-out infinite alternate;}
+@keyframes suit-breathe{from{transform:scaleY(1)}to{transform:scaleY(1.02) translateY(-2px)}}
+</style>
+</head>
+<body>
+<div id="letterbox-top"><div id="hud-badge" class="hud-badge" style="display:none">ECHOES PODCAST · TRANSMISSION ACTIVE</div></div>
+<div id="letterbox-bottom"></div>
+<canvas id="canvas-bg"></canvas>
+<div id="gargantua-wrap"><canvas id="gargantua-canvas"></canvas></div>
+
+<div id="opening">
+  <div class="studio-line" style="animation-delay:.1s">A PRESENTATION OF THE ECHOES UNIVERSE</div>
+  <div class="main-title">ECHOES</div>
+  <div class="title-line2">Git History as Radio Drama</div>
+  <div class="year-tag">MMXXVI — DO NOT GO GENTLE INTO THAT CODEBASE</div>
+</div>
+
+<div id="app">
+<!-- LANDING -->
+<div class="screen" id="s-landing">
+  <div class="hud-badge" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:100">MISSION CONTROL · READY</div>
+  <div class="land-stage">
+    <div class="char-col">
+      <div class="cine-bubble bubble-l" id="land-bub-alex"><div class="cine-bubble-inner" data-who="Alex · Host"><span id="land-txt-alex">Today on the show — a codebase that has seen things.</span></div></div>
+      <div class="name-plate">ALEX · HOST</div>
+      <svg class="char-svg" style="--ft:4.3s;--fd:0s;--glow:#00d4ff;--glow-dim:rgba(0,180,255,0.25);width:150px;height:240px" viewBox="0 0 160 260" xmlns="http://www.w3.org/2000/svg">
+        <defs><radialGradient id="ag-helmet" cx="45%" cy="38%" r="55%"><stop offset="0%" stop-color="#c8e8ff"/><stop offset="60%" stop-color="#7ab8e0"/><stop offset="100%" stop-color="#3a6888"/></radialGradient><radialGradient id="ag-visor" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#0a2a4a"/><stop offset="100%" stop-color="#030e1e"/></radialGradient></defs>
+        <g class="suit-body"><ellipse cx="80" cy="185" rx="48" ry="56" fill="#bcd4e8" stroke="#8ab0cc" stroke-width="1.5"/><rect x="56" y="165" width="48" height="30" rx="4" fill="#8ab0cc" stroke="#6090b0"/><rect x="60" y="169" width="40" height="4" rx="2" fill="#00d4ff" opacity=".6"/><rect x="60" y="177" width="30" height="3" rx="1.5" fill="#4a8aaa" opacity=".6"/><circle cx="100" cy="195" r="10" fill="#0a2a4a" stroke="#4a9fd4"/><text x="100" y="199" text-anchor="middle" font-size="8" fill="#00d4ff" font-family="monospace">★</text><ellipse cx="64" cy="228" rx="18" ry="17" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5"/><ellipse cx="96" cy="228" rx="18" ry="17" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5"/><rect x="50" y="234" width="26" height="14" rx="7" fill="#506070"/><rect x="82" y="234" width="26" height="14" rx="7" fill="#506070"/><ellipse cx="30" cy="188" rx="14" ry="32" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5" transform="rotate(-8 30 188)"/><ellipse cx="130" cy="188" rx="14" ry="32" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5" transform="rotate(8 130 188)"/><ellipse cx="24" cy="218" rx="14" ry="12" fill="#c8dce8" stroke="#88a8c0" stroke-width="1.5"/><ellipse cx="136" cy="218" rx="14" ry="12" fill="#c8dce8" stroke="#88a8c0" stroke-width="1.5"/><rect x="115" y="158" width="20" height="34" rx="4" fill="#9ab8cc" stroke="#7a9ab0"/></g>
+        <circle cx="80" cy="86" r="66" fill="url(#ag-helmet)" stroke="#6090b0" stroke-width="2"/><ellipse cx="80" cy="82" rx="46" ry="42" fill="url(#ag-visor)"/><ellipse cx="80" cy="82" rx="44" ry="40" fill="none" stroke="#1a4a7a" stroke-width="1.5" opacity=".5"/>
+        <circle cx="63" cy="78" r="8.5" fill="#7dd4fc"/><circle cx="97" cy="78" r="8.5" fill="#7dd4fc"/><circle cx="63" cy="78" r="5" fill="#0a2030"/><circle cx="97" cy="78" r="5" fill="#0a2030"/><circle cx="65" cy="76" r="2.5" fill="white" opacity=".9"/><circle cx="99" cy="76" r="2.5" fill="white" opacity=".9"/>
+        <path d="M 54 73 Q 63 68 72 73" stroke="#2a5a7a" stroke-width="2.5" fill="none"/><path d="M 88 73 Q 97 68 106 73" stroke="#2a5a7a" stroke-width="2.5" fill="none"/>
+        <path class="mouth-closed" d="M 68 96 Q 80 103 92 96" stroke="#4a9fd4" stroke-width="3" fill="none" stroke-linecap="round"/><ellipse class="mouth-open" cx="80" cy="97" rx="11" ry="8" fill="#06121e"/>
+        <ellipse cx="58" cy="60" rx="14" ry="9" fill="white" opacity=".09" transform="rotate(-28 58 60)"/>
+        <line x1="80" y1="22" x2="80" y2="4" stroke="#7ab8e0" stroke-width="3.5" stroke-linecap="round"/><circle cx="80" cy="2" r="6" fill="#00d4ff" opacity=".8"/><circle cx="80" cy="2" r="3" fill="white" opacity=".9"/>
+        <rect x="64" y="148" width="32" height="8" rx="4" fill="#8ab0cc" stroke="#6090b0"/>
+      </svg>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;padding-bottom:80px;gap:8px;color:var(--dim)"><div style="font-size:9px;letter-spacing:.35em">V S</div><div style="width:1px;height:60px;background:var(--dim);opacity:.4"></div></div>
+    <div class="char-col">
+      <div class="cine-bubble bubble-r" id="land-bub-dev"><div class="cine-bubble-inner" data-who="Dev · Guest"><span id="land-txt-dev">Three years. Forty-seven commits that say "fix".</span></div></div>
+      <div class="name-plate">DEV · GUEST</div>
+      <svg class="char-svg" style="--ft:3.7s;--fd:.8s;--glow:#c87a20;--glow-dim:rgba(200,120,30,0.25);width:150px;height:240px" viewBox="0 0 160 260" xmlns="http://www.w3.org/2000/svg">
+        <defs><radialGradient id="dg-helmet" cx="45%" cy="38%" r="55%"><stop offset="0%" stop-color="#f0c870"/><stop offset="60%" stop-color="#c89040"/><stop offset="100%" stop-color="#785020"/></radialGradient><radialGradient id="dg-visor" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#1e0e00"/><stop offset="100%" stop-color="#0c0600"/></radialGradient></defs>
+        <g class="suit-body"><ellipse cx="80" cy="185" rx="48" ry="56" fill="#d8902e" stroke="#b06820" stroke-width="1.5"/><rect x="56" y="165" width="48" height="30" rx="4" fill="#b06820" stroke="#906010"/><path d="M 62 168 L 68 180" stroke="#804810" stroke-width="1.5" opacity=".4"/><ellipse cx="94" cy="188" rx="11" ry="8" fill="#7a3808" opacity=".4" transform="rotate(12 94 188)"/><ellipse cx="64" cy="228" rx="18" ry="17" fill="#c07820" stroke="#a05810" stroke-width="1.5"/><ellipse cx="96" cy="228" rx="18" ry="17" fill="#c07820" stroke="#a05810" stroke-width="1.5"/><rect x="50" y="234" width="26" height="14" rx="7" fill="#483020"/><rect x="82" y="234" width="26" height="14" rx="7" fill="#483020"/><ellipse cx="30" cy="188" rx="14" ry="32" fill="#c07828" stroke="#a05818" stroke-width="1.5" transform="rotate(-6 30 188)"/><ellipse cx="130" cy="188" rx="14" ry="32" fill="#c07828" stroke="#a05818" stroke-width="1.5" transform="rotate(6 130 188)"/><ellipse cx="24" cy="218" rx="14" ry="12" fill="#d08030" stroke="#a05818" stroke-width="1.5"/><ellipse cx="136" cy="218" rx="14" ry="12" fill="#d08030" stroke="#a05818" stroke-width="1.5"/><rect x="115" y="158" width="20" height="34" rx="4" fill="#b07020" stroke="#906010"/><circle cx="125" cy="170" r="3" fill="#e05020" opacity=".7"/></g>
+        <circle cx="80" cy="86" r="66" fill="url(#dg-helmet)" stroke="#a07030" stroke-width="2"/><ellipse cx="80" cy="82" rx="46" ry="42" fill="url(#dg-visor)"/><ellipse cx="80" cy="82" rx="44" ry="40" fill="none" stroke="#6a3a10" stroke-width="1.5" opacity=".5"/>
+        <ellipse cx="63" cy="79" rx="8.5" ry="6.5" fill="#f0b840"/><ellipse cx="97" cy="79" rx="8.5" ry="6.5" fill="#f0b840"/><path d="M 53 75 Q 63 71 73 75" fill="#1e0e00"/><path d="M 87 75 Q 97 71 107 75" fill="#1e0e00"/><ellipse cx="63" cy="80" rx="4" ry="3.5" fill="#0c0600"/><ellipse cx="97" cy="80" rx="4" ry="3.5" fill="#0c0600"/>
+        <path d="M 55 83 Q 63 87 71 83" stroke="#7a4010" stroke-width="1.5" fill="none" opacity=".5"/><path d="M 89 83 Q 97 87 105 83" stroke="#7a4010" stroke-width="1.5" fill="none" opacity=".5"/>
+        <path class="mouth-closed" d="M 68 97 Q 80 94 92 97" stroke="#c07820" stroke-width="3" fill="none" stroke-linecap="round"/><ellipse class="mouth-open" cx="80" cy="96" rx="11" ry="7.5" fill="#0e0600"/>
+        <path d="M 108 55 L 118 48 L 114 54 L 122 47" stroke="#a07030" stroke-width="1" fill="none" opacity=".5"/>
+        <ellipse cx="58" cy="60" rx="14" ry="9" fill="white" opacity=".07" transform="rotate(-28 58 60)"/>
+        <rect x="64" y="148" width="32" height="8" rx="4" fill="#b07030" stroke="#906010"/>
+      </svg>
+    </div>
+  </div>
+  <div class="land-input-wrap">
+    <label class="field-label">GITHUB REPOSITORY — TARGET COORDINATES</label>
+    <div class="input-row" id="input-row">
+      <input class="url-input" id="github-input" type="url" placeholder="https://github.com/elevenlabs/skills" value="https://github.com/elevenlabs/skills">
+      <button class="cta-btn" id="launch-btn" onclick="launch()">INITIATE TRANSMISSION</button>
+    </div>
+    <div class="err-msg" id="err-msg"></div>
+    <div class="under-input"><span>OR RUN:</span><span>python scripts/podcast.py --github &lt;url&gt;</span><span style="margin-left:auto">GRAVITATIONAL TIME DILATION: SIGNIFICANT</span></div>
+  </div>
+</div>
+
+<!-- BRIEFING -->
+<div class="screen" id="s-briefing">
+  <div class="briefing-inner">
+    <div class="briefing-title">MISSION BRIEFING<span class="mission-id" id="brief-mission-id">MISSION-████</span></div>
+    <div class="log-block" id="log-block"></div>
+    <div class="tars-panel">
+      <div class="tars-label">TARS<br>SETTINGS</div>
+      <div class="tars-bars">
+        <div class="tars-bar-row"><span class="tars-bar-label">HONESTY</span><div class="tars-bar-track"><div class="tars-bar-fill" id="bar-honesty" style="width:0%"></div></div><span class="tars-bar-val" id="val-honesty">0%</span></div>
+        <div class="tars-bar-row"><span class="tars-bar-label">HUMOR</span><div class="tars-bar-track"><div class="tars-bar-fill" id="bar-humor" style="width:0%"></div></div><span class="tars-bar-val" id="val-humor">0%</span></div>
+        <div class="tars-bar-row"><span class="tars-bar-label">DRAMA</span><div class="tars-bar-track"><div class="tars-bar-fill" id="bar-drama" style="width:0%"></div></div><span class="tars-bar-val" id="val-drama">0%</span></div>
+      </div>
+    </div>
+    <div class="gravity-watch">ELAPSED TRANSMISSION TIME:<span id="elapsed-h">00</span><span class="colon">:</span><span id="elapsed-m">00</span><span class="colon">:</span><span id="elapsed-s">00</span></div>
+  </div>
+</div>
+<!-- EPISODE -->
+<div class="screen" id="s-episode">
+  <div style="width:100%;display:flex;flex-direction:column;align-items:center">
+    <div class="ep-title-block">
+      <div><div class="ep-show">ECHOES PODCAST · TRANSMISSION COMPLETE</div><div class="ep-title-main" id="ep-title">Loading...</div></div>
+      <div class="ep-meta-right" id="ep-meta"></div>
+    </div>
+    <div class="ep-main">
+      <div class="char-panel alex-panel" id="panel-alex">
+        <div class="panel-label">ALEX · HOST</div><div class="char-aura alex-aura"></div>
+        <svg class="char-svg" id="svg-alex" style="--ft:4.3s;--fd:0s;--glow:#00d4ff;--glow-dim:rgba(0,180,255,0.25);width:130px;height:208px" viewBox="0 0 160 260" xmlns="http://www.w3.org/2000/svg">
+          <g class="suit-body"><ellipse cx="80" cy="185" rx="48" ry="56" fill="#bcd4e8" stroke="#8ab0cc" stroke-width="1.5"/><rect x="56" y="165" width="48" height="30" rx="4" fill="#8ab0cc" stroke="#6090b0"/><rect x="60" y="169" width="40" height="4" rx="2" fill="#00d4ff" opacity=".6"/><circle cx="100" cy="195" r="10" fill="#0a2a4a" stroke="#4a9fd4"/><text x="100" y="199" text-anchor="middle" font-size="8" fill="#00d4ff" font-family="monospace">★</text><ellipse cx="64" cy="228" rx="18" ry="17" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5"/><ellipse cx="96" cy="228" rx="18" ry="17" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5"/><rect x="50" y="234" width="26" height="14" rx="7" fill="#506070"/><rect x="82" y="234" width="26" height="14" rx="7" fill="#506070"/><ellipse cx="30" cy="188" rx="14" ry="32" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5" transform="rotate(-8 30 188)"/><ellipse cx="130" cy="188" rx="14" ry="32" fill="#a8c4d8" stroke="#88a8c0" stroke-width="1.5" transform="rotate(8 130 188)"/><ellipse cx="24" cy="218" rx="14" ry="12" fill="#c8dce8" stroke="#88a8c0" stroke-width="1.5"/><ellipse cx="136" cy="218" rx="14" ry="12" fill="#c8dce8" stroke="#88a8c0" stroke-width="1.5"/><rect x="115" y="158" width="20" height="34" rx="4" fill="#9ab8cc" stroke="#7a9ab0"/></g>
+          <circle cx="80" cy="86" r="66" fill="url(#ag-helmet)" stroke="#6090b0" stroke-width="2"/><ellipse cx="80" cy="82" rx="46" ry="42" fill="url(#ag-visor)"/>
+          <circle cx="63" cy="78" r="8.5" fill="#7dd4fc"/><circle cx="97" cy="78" r="8.5" fill="#7dd4fc"/><circle cx="63" cy="78" r="5" fill="#0a2030"/><circle cx="97" cy="78" r="5" fill="#0a2030"/><circle cx="65" cy="76" r="2.5" fill="white" opacity=".9"/><circle cx="99" cy="76" r="2.5" fill="white" opacity=".9"/>
+          <path d="M 54 73 Q 63 68 72 73" stroke="#2a5a7a" stroke-width="2.5" fill="none"/><path d="M 88 73 Q 97 68 106 73" stroke="#2a5a7a" stroke-width="2.5" fill="none"/>
+          <path class="mouth-closed" d="M 68 96 Q 80 103 92 96" stroke="#4a9fd4" stroke-width="3" fill="none" stroke-linecap="round"/><ellipse class="mouth-open" cx="80" cy="97" rx="11" ry="8" fill="#06121e"/>
+          <line x1="80" y1="22" x2="80" y2="4" stroke="#7ab8e0" stroke-width="3.5" stroke-linecap="round"/><circle cx="80" cy="2" r="6" fill="#00d4ff" opacity=".8"/><rect x="64" y="148" width="32" height="8" rx="4" fill="#8ab0cc" stroke="#6090b0"/>
+        </svg>
+        <div class="speak-bar"><div class="speak-bar-fill"></div></div>
+      </div>
+      <div class="stage-panel">
+        <div class="stage-bg-label">ECHOES</div>
+        <div class="subtitle-track">
+          <div class="sub-who" id="sub-who">INITIALIZING...</div>
+          <div class="sub-text" id="sub-text"><span id="sub-typed"></span><span class="sub-cursor" id="sub-cursor"></span></div>
+        </div>
+      </div>
+      <div class="char-panel dev-panel" id="panel-dev">
+        <div class="panel-label">DEV · GUEST</div><div class="char-aura dev-aura"></div>
+        <svg class="char-svg" id="svg-dev" style="--ft:3.7s;--fd:.8s;--glow:#c87a20;--glow-dim:rgba(200,120,30,0.25);width:130px;height:208px" viewBox="0 0 160 260" xmlns="http://www.w3.org/2000/svg">
+          <g class="suit-body"><ellipse cx="80" cy="185" rx="48" ry="56" fill="#d8902e" stroke="#b06820" stroke-width="1.5"/><rect x="56" y="165" width="48" height="30" rx="4" fill="#b06820" stroke="#906010"/><path d="M 62 168 L 68 180" stroke="#804810" stroke-width="1.5" opacity=".4"/><ellipse cx="94" cy="188" rx="11" ry="8" fill="#7a3808" opacity=".4" transform="rotate(12 94 188)"/><ellipse cx="64" cy="228" rx="18" ry="17" fill="#c07820" stroke="#a05810" stroke-width="1.5"/><ellipse cx="96" cy="228" rx="18" ry="17" fill="#c07820" stroke="#a05810" stroke-width="1.5"/><rect x="50" y="234" width="26" height="14" rx="7" fill="#483020"/><rect x="82" y="234" width="26" height="14" rx="7" fill="#483020"/><ellipse cx="30" cy="188" rx="14" ry="32" fill="#c07828" stroke="#a05818" stroke-width="1.5" transform="rotate(-6 30 188)"/><ellipse cx="130" cy="188" rx="14" ry="32" fill="#c07828" stroke="#a05818" stroke-width="1.5" transform="rotate(6 130 188)"/><ellipse cx="24" cy="218" rx="14" ry="12" fill="#d08030" stroke="#a05818" stroke-width="1.5"/><ellipse cx="136" cy="218" rx="14" ry="12" fill="#d08030" stroke="#a05818" stroke-width="1.5"/><rect x="115" y="158" width="20" height="34" rx="4" fill="#b07020" stroke="#906010"/><circle cx="125" cy="170" r="3" fill="#e05020" opacity=".7"/></g>
+          <circle cx="80" cy="86" r="66" fill="url(#dg-helmet)" stroke="#a07030" stroke-width="2"/><ellipse cx="80" cy="82" rx="46" ry="42" fill="url(#dg-visor)"/>
+          <ellipse cx="63" cy="79" rx="8.5" ry="6.5" fill="#f0b840"/><ellipse cx="97" cy="79" rx="8.5" ry="6.5" fill="#f0b840"/><path d="M 53 75 Q 63 71 73 75" fill="#1e0e00"/><path d="M 87 75 Q 97 71 107 75" fill="#1e0e00"/><ellipse cx="63" cy="80" rx="4" ry="3.5" fill="#0c0600"/><ellipse cx="97" cy="80" rx="4" ry="3.5" fill="#0c0600"/>
+          <path class="mouth-closed" d="M 68 97 Q 80 94 92 97" stroke="#c07820" stroke-width="3" fill="none" stroke-linecap="round"/><ellipse class="mouth-open" cx="80" cy="96" rx="11" ry="7.5" fill="#0e0600"/>
+          <rect x="64" y="148" width="32" height="8" rx="4" fill="#b07030" stroke="#906010"/>
+        </svg>
+        <div class="speak-bar"><div class="speak-bar-fill"></div></div>
+      </div>
+    </div>
+    <div class="chapters-block" id="chapters-block"></div>
+    <div class="player-strip">
+      <div class="player-left">
+        <button class="play-btn" id="play-btn" onclick="togglePlay()">▶</button>
+        <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);line-height:2;letter-spacing:.1em"><div id="p-show">ECHOES PODCAST</div><div id="p-ep" style="color:var(--amber);font-size:9px">—</div></div>
+      </div>
+      <div class="viz-wrap"><canvas id="waveform-canvas" width="800" height="40"></canvas><div class="progress-track" id="prog-track" onclick="seek(event)"><div class="progress-fill" id="prog-fill"></div><span class="progress-time" id="prog-time">0:00 / 0:00</span></div></div>
+      <div class="player-right"><a class="dl-link" id="dl-link" href="#" download="echoes_podcast.mp3">↓ DOWNLOAD MP3</a><button class="reset-btn" onclick="goBack()">← NEW MISSION</button></div>
+    </div>
+    <audio id="audio" style="display:none"></audio>
+  </div>
+</div>
+</div>
+<script>
+// STARFIELD
+(function(){const cv=document.getElementById('canvas-bg'),ctx=cv.getContext('2d');let stars=[];function init(){cv.width=window.innerWidth;cv.height=window.innerHeight;stars=[];for(let i=0;i<350;i++)stars.push({x:Math.random()*cv.width,y:Math.random()*cv.height,r:Math.random()*1.6+0.2,a:Math.random()*0.7+0.15,s:Math.random()*0.006+0.001,ph:Math.random()*Math.PI*2,c:Math.random()<.05?'warm':Math.random()<.08?'cool':'white'})}function draw(t){ctx.clearRect(0,0,cv.width,cv.height);[{x:.15,y:.3,rx:200,ry:120,c:'rgba(20,10,40,'},{x:.85,y:.7,rx:180,ry:100,c:'rgba(10,20,40,'},{x:.5,y:.15,rx:300,ry:80,c:'rgba(30,15,10,'}].forEach(n=>{const g=ctx.createRadialGradient(n.x*cv.width,n.y*cv.height,0,n.x*cv.width,n.y*cv.height,n.rx);g.addColorStop(0,n.c+'0.5)');g.addColorStop(1,n.c+'0)');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(n.x*cv.width,n.y*cv.height,n.rx,n.ry,0,0,Math.PI*2);ctx.fill()});stars.forEach(s=>{const a=s.a*(0.4+0.6*Math.abs(Math.sin(t*s.s+s.ph)));ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fillStyle=s.c==='warm'?`rgba(255,208,160,${a})`:s.c==='cool'?`rgba(160,192,255,${a})`:`rgba(216,232,248,${a})`;ctx.fill()});requestAnimationFrame(draw)}window.addEventListener('resize',init);init();requestAnimationFrame(draw)})();
+
+// GARGANTUA
+(function(){const cv=document.getElementById('gargantua-canvas'),ctx=cv.getContext('2d');let t=0;function resize(){const w=cv.parentElement.clientWidth;cv.width=w;cv.height=w}window.addEventListener('resize',resize);resize();function draw(){const W=cv.width,H=cv.height,cx=W/2,cy=H/2,r=W*.32;ctx.clearRect(0,0,W,H);t+=0.004;const lg=ctx.createRadialGradient(cx,cy,r*1.1,cx,cy,r*2.2);lg.addColorStop(0,'rgba(200,120,20,0.04)');lg.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=lg;ctx.fillRect(0,0,W,H);for(let i=0;i<360;i+=.5){const a=i*Math.PI/180,dr=r*1.08+Math.sin(a*3+t*2)*r*.015,x=cx+dr*Math.cos(a),y=cy+dr*Math.sin(a)*0.22,h=Math.abs(Math.sin(a*2+t*3)),op=.45+Math.sin(a+t*1.5)*.25,red=Math.round(255*Math.min(1,.6+h*.4)),grn=Math.round(80*h),th=2.5+h*3.5;ctx.beginPath();ctx.arc(x,y,th*.5,0,Math.PI*2);ctx.fillStyle=`rgba(${red},${grn},0,${op})`;ctx.fill()}for(let i=180;i<360;i+=.6){const a=i*Math.PI/180,dr=r*1.08,x=cx+dr*Math.cos(a),y=cy+dr*Math.sin(a)*0.20,h=Math.abs(Math.sin(a*2+t*2.5));ctx.beginPath();ctx.arc(x,y,1.2+h*1.5,0,Math.PI*2);ctx.fillStyle=`rgba(255,${Math.round(120+h*80)},${Math.round(h*60)},${.2+h*.15})`;ctx.fill()}for(let i=0;i<360;i+=.4){const a=i*Math.PI/180,pr=r*1.02,x=cx+pr*Math.cos(a),y=cy+pr*Math.sin(a)*0.25;ctx.beginPath();ctx.arc(x,y,.8,0,Math.PI*2);ctx.fillStyle=`rgba(255,220,150,${.15+Math.sin(a+t*2)*.1})`;ctx.fill()}const eh=ctx.createRadialGradient(cx,cy,0,cx,cy,r*.98);eh.addColorStop(0,'rgba(0,0,0,1)');eh.addColorStop(.85,'rgba(0,0,0,1)');eh.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=eh;ctx.beginPath();ctx.arc(cx,cy,r*.98,0,Math.PI*2);ctx.fill();requestAnimationFrame(draw)}draw()})();
+
+// OPENING → LANDING
+setTimeout(()=>{const op=document.getElementById('opening');op.style.transition='opacity 1.2s ease';op.style.opacity='0';setTimeout(()=>{op.style.display='none';showScreen('s-landing');document.getElementById('hud-badge').style.display='flex';cycleLandingBubbles()},1200)},3000);
+
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));const el=document.getElementById(id);if(el)el.classList.add('active')}
+
+const ALEX_LINES=["Today on the show — a codebase that has seen things.","Your git history has stories. We're going to voice them.","Forty-seven commits. Three engineers. One mystery.","What happens when you paste a repo URL into a black hole?"];
+const DEV_LINES=["I've been maintaining this for three years. I have thoughts.","The README said it was temporary. That was in 2021.","[sighs] Every commit that says 'fix' is a scar.","We said we'd clean it up. We never came back."];
+let lIdx={alex:0,dev:0},lTypeTimers={};
+function typeTo(id,text){const el=document.getElementById(id);if(!el)return;if(lTypeTimers[id])clearInterval(lTypeTimers[id]);el.textContent='';let i=0;lTypeTimers[id]=setInterval(()=>{el.textContent=text.slice(0,++i);if(i>=text.length)clearInterval(lTypeTimers[id])},16)}
+function cycleLandingBubbles(){document.getElementById('land-bub-alex').classList.add('show');document.getElementById('land-bub-dev').classList.add('show');typeTo('land-txt-alex',ALEX_LINES[lIdx.alex++%ALEX_LINES.length]);setTimeout(()=>typeTo('land-txt-dev',DEV_LINES[lIdx.dev++%DEV_LINES.length]),1200)}
+setInterval(cycleLandingBubbles,7000);
+setInterval(()=>{const t=Math.floor(Date.now()/550)%4;document.querySelectorAll('.land-stage .char-svg').forEach((el,i)=>{el.classList.toggle('speaking-mouth',i===0?t<2:t>=2)})},550);
+
+let jobId=null,pollT=null,startTime=null,elapsed=null;
+async function launch(){const url=document.getElementById('github-input').value.trim();const err=document.getElementById('err-msg');err.textContent='';err.classList.remove('show');if(!url){showErr('Enter a GitHub repo URL.');return}if(!url.includes('github.com')){showErr('Must be a github.com URL.');return}document.getElementById('launch-btn').disabled=true;showScreen('s-briefing');startBriefing(url);try{const r=await fetch('/api/podcast/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({github_url:url})});if(!r.ok)throw new Error((await r.json()).detail||'Start failed');const d=await r.json();jobId=d.job_id;pollT=setInterval(pollStatus,4000)}catch(e){goBack();showErr(e.message)}}
+function showErr(msg){const err=document.getElementById('err-msg');err.textContent=msg;err.classList.add('show');document.getElementById('launch-btn').disabled=false}
+
+const BRIEF_STEPS=['ESTABLISHING WORMHOLE CONNECTION','CLONING REPOSITORY','PARSING COMMIT HISTORY & AUTHOR GRAPH','EXTRACTING README & FILE STRUCTURE','GENERATING CINEMATIC PODCAST SCRIPT','DESIGNING VOICE PERSONAS VIA VOICE DESIGN API','RECORDING ALL AUDIO SEGMENTS','COMPOSING MUSIC STINGS & SOUND EFFECTS','ASSEMBLING FINAL EPISODE','EMBEDDING CHAPTER MARKERS','TRANSMISSION READY'];
+let stepIdx=0,stepInterval=null;
+function startBriefing(url){stepIdx=0;document.getElementById('brief-mission-id').textContent='MISSION-'+Math.random().toString(36).slice(2,6).toUpperCase();const block=document.getElementById('log-block');block.innerHTML='';BRIEF_STEPS.forEach((s,i)=>{const d=document.createElement('div');d.className='log-entry';d.id='log-'+i;d.innerHTML=`<span class="step-num">${String(i+1).padStart(2,'0')}</span><span class="step-bar"></span><span>${s}</span>`;block.appendChild(d)});stepInterval=setInterval(()=>{if(stepIdx>0){const p=document.getElementById('log-'+(stepIdx-1));if(p){p.classList.remove('active');p.classList.add('done')}}if(stepIdx<BRIEF_STEPS.length){const c=document.getElementById('log-'+stepIdx);if(c)c.classList.add('active');stepIdx++}else clearInterval(stepInterval)},2800);setTimeout(()=>animBar('bar-honesty','val-honesty',90),400);setTimeout(()=>animBar('bar-humor','val-humor',75),700);setTimeout(()=>animBar('bar-drama','val-drama',95),1000);startTime=Date.now();elapsed=setInterval(()=>{const s=Math.floor((Date.now()-startTime)/1000);document.getElementById('elapsed-h').textContent=String(Math.floor(s/3600)).padStart(2,'0');document.getElementById('elapsed-m').textContent=String(Math.floor((s%3600)/60)).padStart(2,'0');document.getElementById('elapsed-s').textContent=String(s%60).padStart(2,'0')},1000)}
+function animBar(bId,vId,target){const b=document.getElementById(bId),v=document.getElementById(vId);if(!b||!v)return;let n=0;const t=setInterval(()=>{n=Math.min(n+2,target);b.style.width=n+'%';v.textContent=n+'%';if(n>=target)clearInterval(t)},20)}
+
+async function pollStatus(){if(!jobId)return;try{const r=await fetch(`/api/podcast/status/${jobId}`);if(!r.ok)return;const d=await r.json();if(d.status==='done'){clearInterval(pollT);clearInterval(elapsed);setTimeout(()=>showEpisode(d.result),800)}else if(d.status==='error'){clearInterval(pollT);clearInterval(elapsed);goBack();showErr(d.error||'Error')}}catch(e){}}
+
+let epAudio=null,vizRAF=null,chaps=[],mouthT=null,interviewT=null,lastChIdx=-1;
+function showEpisode(data){chaps=data.chapters||[];document.getElementById('ep-title').textContent=data.episode_title||data.show_title||'Untitled';document.getElementById('ep-meta').innerHTML=`${data.repo_name||'REPO'}<br>${data.commit_count||0} COMMITS<br>${chaps.length} CHAPTERS<br>${fmtMs(data.duration_ms||0)}`;document.getElementById('p-ep').textContent=(data.episode_title||'').slice(0,40);const blk=document.getElementById('chapters-block');blk.innerHTML='';chaps.slice(0,4).forEach((ch,i)=>{const d=document.createElement('div');d.className='chapter-item';d.id='ch-'+i;d.innerHTML=`<div class="ch-num">0${i+1}</div><div class="ch-time">${fmtMs(ch.start_ms)}</div><div class="ch-title">${ch.title}</div><div class="ch-bar"></div>`;d.onclick=()=>{if(epAudio){epAudio.currentTime=ch.start_ms/1000;epAudio.play()}};blk.appendChild(d)});epAudio=document.getElementById('audio');epAudio.src=data.audio_url;document.getElementById('dl-link').href=data.audio_url;epAudio.addEventListener('loadedmetadata',()=>updateTime());epAudio.addEventListener('timeupdate',onTimeUpdate);epAudio.addEventListener('play',()=>{document.getElementById('play-btn').textContent='⏸';startWaveform()});epAudio.addEventListener('pause',()=>{document.getElementById('play-btn').textContent='▶';clearMouth()});epAudio.addEventListener('ended',()=>{document.getElementById('play-btn').textContent='▶';clearMouth()});showScreen('s-episode');document.getElementById('hud-badge').textContent='ECHOES PODCAST · TRANSMISSION PLAYING';setSubtitle('alex','Welcome to the episode.');setTimeout(()=>epAudio.play().catch(()=>{}),600)}
+
+function onTimeUpdate(){const ms=epAudio.currentTime*1000,dur=epAudio.duration*1000||1;document.getElementById('prog-fill').style.width=(ms/dur*100).toFixed(2)+'%';updateTime();let ci=chaps.length-1;for(let i=0;i<chaps.length;i++){if(chaps[i].start_ms>ms){ci=i-1;break}}if(ci<0)ci=0;document.querySelectorAll('.chapter-item').forEach((el,i)=>el.classList.toggle('active',i===ci));if(ci!==lastChIdx){lastChIdx=ci;onChapter(chaps[ci])}}
+
+const SEG_MAP={'cold open':{who:'alex',mode:'solo'},'welcome':{who:'alex',mode:'solo'},'by the numbers':{who:'alex',mode:'solo'},'interview':{who:'both',mode:'both'},'incident':{who:'alex',mode:'solo'},'ad break':{who:'ad',mode:'ad'},'outro':{who:'alex',mode:'solo'}};
+function mapSeg(title){const t=title.toLowerCase();for(const[k,v]of Object.entries(SEG_MAP)){if(t.includes(k))return v}return{who:'alex',mode:'solo'}}
+
+let iToggle=false;
+function onChapter(ch){clearAllTimers();const seg=mapSeg(ch.title);if(seg.mode==='both'){iToggle=false;doInterviewState();interviewT=setInterval(()=>{iToggle=!iToggle;doInterviewState()},4200);setSubtitle('both','On the record. Tell me what really happened.')}else if(seg.mode==='ad'){setSpeaker(null);setSubtitle('ad','This segment brought to you by code that definitely works in production.')}else{setSpeaker('alex');const lines={'cold open':'The codebase before you has seen things.','welcome':"Welcome to Echoes Podcast. I'm your host, Alex.",'by the numbers':'Let me give you the stats. They\'re illuminating.','incident':'And then there was... the incident.','outro':"That's all for today's transmission. Until next time."};const t=ch.title.toLowerCase();for(const[k,v]of Object.entries(lines)){if(t.includes(k)){setSubtitle('alex',v);break}}}startMouth(seg)}
+function doInterviewState(){if(iToggle){setSpeaker('dev');setSubtitle('dev','[sighs] I knew it was wrong when I shipped it.')}else{setSpeaker('alex');setSubtitle('alex','Tell me — what does that commit actually mean?')}}
+function setSpeaker(who){document.getElementById('panel-alex').classList.toggle('active-speaker',who==='alex'||who==='both');document.getElementById('panel-dev').classList.toggle('active-speaker',who==='dev'||who==='both')}
+function setSubtitle(who,text){const wEl=document.getElementById('sub-who'),tEl=document.getElementById('sub-typed');const map={alex:'ALEX — HOST',dev:'DEV — GUEST',both:'INTERVIEW SEGMENT',ad:'SPONSORED CONTENT'};const cls={alex:'alex-who',dev:'dev-who',both:'alex-who',ad:'ad-who'};wEl.className='sub-who '+(cls[who]||'');wEl.textContent=map[who]||who.toUpperCase();if(window._subT)clearInterval(window._subT);tEl.textContent='';let i=0;window._subT=setInterval(()=>{tEl.textContent=text.slice(0,++i);if(i>=text.length)clearInterval(window._subT)},14)}
+let mouthFlip=false;
+function startMouth(seg){clearMouth();mouthT=setInterval(()=>{mouthFlip=!mouthFlip;if(seg.mode==='both'){document.getElementById('svg-alex').classList.toggle('speaking-mouth',mouthFlip);document.getElementById('svg-dev').classList.toggle('speaking-mouth',!mouthFlip)}else if(seg.mode==='solo'){document.getElementById('svg-alex').classList.toggle('speaking-mouth',mouthFlip);document.getElementById('svg-dev').classList.remove('speaking-mouth')}},420)}
+function clearMouth(){if(mouthT){clearInterval(mouthT);mouthT=null}document.querySelectorAll('.char-svg').forEach(el=>el.classList.remove('speaking-mouth'))}
+function clearAllTimers(){clearMouth();if(interviewT){clearInterval(interviewT);interviewT=null}setSpeaker(null)}
+
+let audioCtx=null,analyser=null,src=null;
+function startWaveform(){const cv=document.getElementById('waveform-canvas'),ctx=cv.getContext('2d'),W=cv.width,H=cv.height;if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();analyser=audioCtx.createAnalyser();analyser.fftSize=256;src=audioCtx.createMediaElementSource(epAudio);src.connect(analyser);analyser.connect(audioCtx.destination)}catch(e){drawFakeWave(cv,ctx,W,H);return}}if(audioCtx.state==='suspended')audioCtx.resume();const buf=new Uint8Array(analyser.frequencyBinCount);function frame(){if(epAudio.paused||epAudio.ended){ctx.clearRect(0,0,W,H);return}vizRAF=requestAnimationFrame(frame);analyser.getByteFrequencyData(buf);ctx.clearRect(0,0,W,H);const bW=W/buf.length*2.5;let x=0;for(let i=0;i<buf.length;i++){const p=buf[i]/255,h=i<buf.length*.3?30+i*40/buf.length:200;ctx.fillStyle=`hsla(${h},${60+p*40}%,${20+p*50}%,0.85)`;ctx.fillRect(x,H-p*H*.9,bW-1,p*H*.9);x+=bW}}vizRAF=requestAnimationFrame(frame)}
+function drawFakeWave(cv,ctx,W,H){let ft=0;function ff(){if(epAudio&&epAudio.paused)return;requestAnimationFrame(ff);ctx.clearRect(0,0,W,H);ft+=0.06;for(let i=0;i<80;i++){const p=.1+.6*Math.abs(Math.sin(i*.18+ft)),h=i<30?40:i<60?20:200;ctx.fillStyle=`hsla(${h},60%,${30+p*40}%,0.7)`;ctx.fillRect(i*(W/80),H-p*H*.85,W/80-1,p*H*.85)}}ff()}
+
+function togglePlay(){if(!epAudio)return;if(epAudio.paused)epAudio.play();else epAudio.pause()}
+function seek(e){if(!epAudio)return;const tr=document.getElementById('prog-track');epAudio.currentTime=((e.clientX-tr.getBoundingClientRect().left)/tr.offsetWidth)*epAudio.duration}
+function updateTime(){if(!epAudio)return;document.getElementById('prog-time').textContent=`${fmtSec(epAudio.currentTime)} / ${fmtSec(epAudio.duration||0)}`}
+function goBack(){clearAllTimers();if(vizRAF){cancelAnimationFrame(vizRAF);vizRAF=null}if(epAudio){epAudio.pause();epAudio.src=''}if(pollT){clearInterval(pollT);pollT=null}if(elapsed){clearInterval(elapsed);elapsed=null}jobId=null;lastChIdx=-1;document.getElementById('launch-btn').disabled=false;document.getElementById('hud-badge').textContent='MISSION CONTROL · READY';showScreen('s-landing')}
+function fmtMs(ms){const s=Math.round(ms/1000);return`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`}
+function fmtSec(s){if(!s||isNaN(s))return'0:00';return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`}
+</script>
+</body>
+</html>

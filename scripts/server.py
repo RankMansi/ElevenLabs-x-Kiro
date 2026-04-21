@@ -1,23 +1,52 @@
 #!/usr/bin/env python3
 """
 Echoes — Web UI Server
-Exposes HTTP endpoints for the web UI to trigger echoes.py
+Serves index.html and runs podcast.py jobs asynchronously.
 """
 
-import os
-import sys
-import json
-import subprocess
+import os, sys, json, subprocess, uuid, threading
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SCRIPT_DIR = Path(__file__).parent
-ECHOES_SCRIPT = SCRIPT_DIR / "echoes.py"
-PYTHON = sys.executable
+SCRIPT_DIR    = Path(__file__).parent
+PODCAST_SCRIPT = SCRIPT_DIR / "podcast.py"
+PYTHON        = sys.executable
+
+# In-memory job store: {job_id: {"status": "running"|"done"|"error", "result": {...}, "error": str}}
+JOBS = {}
+
+
+def run_podcast_job(job_id: str, github_url: str):
+    try:
+        result = subprocess.run(
+            [PYTHON, str(PODCAST_SCRIPT), "--github", github_url, "--json"],
+            capture_output=True, text=True, timeout=600,
+            cwd=str(SCRIPT_DIR.parent)
+        )
+        output = result.stdout.strip()
+        # Last line should be the JSON payload
+        for line in reversed(output.split("\n")):
+            line = line.strip()
+            if line.startswith("{"):
+                data = json.loads(line)
+                if data.get("success"):
+                    # Expose audio as a URL path
+                    audio_path = data.get("audio_path", "")
+                    data["audio_url"] = f"/audio/{Path(audio_path).name}"
+                    # Store file path for serving
+                    data["_audio_path"] = audio_path
+                    JOBS[job_id] = {"status": "done", "result": data}
+                else:
+                    JOBS[job_id] = {"status": "error", "error": data.get("error", "Unknown error")}
+                return
+        JOBS[job_id] = {"status": "error", "error": result.stderr[-500:] or "No JSON output"}
+    except subprocess.TimeoutExpired:
+        JOBS[job_id] = {"status": "error", "error": "Timed out after 600s"}
+    except Exception as e:
+        JOBS[job_id] = {"status": "error", "error": str(e)}
 
 
 class EchoesHandler(BaseHTTPRequestHandler):
@@ -37,7 +66,7 @@ class EchoesHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
@@ -47,73 +76,74 @@ class EchoesHandler(BaseHTTPRequestHandler):
             if index.exists():
                 body = index.read_bytes()
                 self.send_response(200)
-                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", len(body))
                 self.end_headers()
                 self.wfile.write(body)
             else:
                 self.send_json({"error": "index.html not found"}, 404)
+
+        elif self.path.startswith("/audio/"):
+            filename = self.path[7:]  # strip /audio/
+            # Search common temp locations
+            for search_dir in ["/tmp", "/var/folders"]:
+                for p in Path(search_dir).rglob(filename):
+                    body = p.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "audio/mpeg")
+                    self.send_header("Content-Length", len(body))
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+            # Also check job store for exact path
+            for job in JOBS.values():
+                if job.get("status") == "done":
+                    ap = job["result"].get("_audio_path", "")
+                    if Path(ap).name == filename and Path(ap).exists():
+                        body = Path(ap).read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "audio/mpeg")
+                        self.send_header("Content-Length", len(body))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+            self.send_json({"error": "audio not found"}, 404)
+
+        elif self.path.startswith("/api/podcast/status/"):
+            job_id = self.path.split("/")[-1]
+            job = JOBS.get(job_id)
+            if not job:
+                self.send_json({"status": "not_found"}, 404)
+            else:
+                self.send_json(job)
         else:
             self.send_json({"error": "not found"}, 404)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length)) if length else {}
+        body   = json.loads(self.rfile.read(length)) if length else {}
 
-        if self.path == "/api/generate":
-            # Optional --dir from request body
-            repo_dir = body.get("dir")
-            args = [str(ECHOES_SCRIPT), "--json"]
-            if repo_dir:
-                args += ["--dir", repo_dir]
-            self._run_echoes(args)
-
-        elif self.path == "/api/generate-repo":
-            # Optional --dir from request body
-            repo_dir = body.get("dir")
-            args = [str(ECHOES_SCRIPT), "--json"]
-            if repo_dir:
-                args += ["--dir", repo_dir]
-            self._run_echoes(args)
+        if self.path == "/api/podcast/start":
+            github_url = body.get("github_url", "").strip()
+            if not github_url:
+                self.send_json({"detail": "github_url required"}, 400)
+                return
+            job_id = str(uuid.uuid4())[:8]
+            JOBS[job_id] = {"status": "running"}
+            t = threading.Thread(target=run_podcast_job, args=(job_id, github_url), daemon=True)
+            t.start()
+            self.send_json({"job_id": job_id})
 
         else:
             self.send_json({"error": "not found"}, 404)
-
-    def _run_echoes(self, args: list):
-        try:
-            result = subprocess.run(
-                [PYTHON] + args,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                cwd=os.getcwd()
-            )
-            if result.returncode == 0:
-                # echoes.py --json prints a single JSON line to stdout
-                output = result.stdout.strip()
-                try:
-                    data = json.loads(output.split("\n")[-1])
-                except Exception:
-                    data = {"output": output}
-                self.send_json({"status": "ok", **data})
-            else:
-                self.send_json({
-                    "status": "error",
-                    "output": result.stdout,
-                    "error": result.stderr
-                }, 500)
-        except subprocess.TimeoutExpired:
-            self.send_json({"error": "timed out after 300s"}, 504)
-        except Exception as e:
-            self.send_json({"error": str(e)}, 500)
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8765))
     server = HTTPServer(("0.0.0.0", port), EchoesHandler)
-    print(f"\n🎭 Echoes server running → http://localhost:{port}")
-    print("   POST /api/generate       — analyze repo (body: {\"dir\": \"/optional/path\"})")
-    print("   POST /api/generate-repo  — same endpoint, alias\n")
+    print(f"\n🎙️  Echoes server → http://localhost:{port}")
+    print(f"   Open that URL in your browser\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

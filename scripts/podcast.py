@@ -157,9 +157,13 @@ def read_repo_data(repo_dir: str) -> dict:
 # ── Step 2: Podcast script via Gemini ─────────────────────────────────────────
 
 def generate_podcast_script(data: dict, json_mode=False) -> dict:
-    from google import genai
-    from google.genai import types
+    import openai as _openai
 
+    puter_token = os.getenv("PUTER_AUTH_TOKEN")
+    oc = _openai.OpenAI(
+        base_url="https://api.puter.com/puterai/openai/v1/",
+        api_key=puter_token,
+    )
     repo     = data["repo_name"]
     authors  = ", ".join([f"{a} ({n} commits)" for a, n in data["top_authors"][:4]])
     files    = ", ".join([f[0] for f in data["hot_files"][:5]])
@@ -186,25 +190,64 @@ def generate_podcast_script(data: dict, json_mode=False) -> dict:
     dramatic_snippet = dramatic[:100] if dramatic else "a difficult period"
     first_hot_file   = files.split(",")[0].strip() if files else "that file"
 
-    prompt = f"""You are writing the script for a professional tech podcast episode — think NPR Planet Money meets a developer conference talk. Dry wit, genuine insight, real human moments.
+    # Build story arc from commit history
+    early_commits  = [c for c in data["all_commits"] if any(k in c["subject"].lower() for k in ["init","add","create","start","first"])][:2]
+    messy_commits  = [c for c in data["all_commits"] if any(k in c["subject"].lower() for k in ["fix","hack","temp","wip","quick","patch"])][:3]
+    regret_commits = [c for c in data["all_commits"] if any(k in c["subject"].lower() for k in ["revert","broken","oops","wrong","sorry","remove"])][:2]
 
-REPO: {repo} | Language: {language} | Commits: {total} | Started: {first}
-Contributors: {authors}
-Most changed files: {files}
-README: {readme}
-Recent commits: {recent}
-Dramatic commits: {dramatic}
+    arc_early  = " | ".join(c["subject"] for c in early_commits)  or "early work"
+    arc_messy  = " | ".join(c["subject"] for c in messy_commits)  or "pressure period"
+    arc_regret = " | ".join(c["subject"] for c in regret_commits) or "late corrections"
 
-HOST: Alex — sharp, warm, NPR weekend edition energy. Knows enough to ask real questions. Has opinions.
-GUEST: {guest_author} — top contributor. Tired in an endearing way. Defensive when challenged, honest when pressed.
-AD NARRATOR: classic, slightly-too-enthusiastic radio announcer.
+    prompt = f"""You are writing a podcast episode script. The style is NPR Planet Money — dry wit, genuine insight, specific details, real human moments. Not a tech explainer. A story about people who built something.
 
-Return ONLY valid JSON, no markdown:
+━━━ REPO ━━━
+Name: {repo} | Language: {language} | {total} commits | Started: {first}
+Top contributors: {authors}
+Most-changed files (the ones nobody wants to touch): {files}
+README excerpt: {readme[:600]}
+
+━━━ STORY ARC (use this to shape the episode) ━━━
+Early excitement: {arc_early}
+Pressure period: {arc_messy}
+Late corrections: {arc_regret}
+Most dramatic commits: {dramatic}
+
+━━━ VOICE BIBLE ━━━
+
+ALEX — HOST
+- Warm but not soft. Asks questions that already contain a theory.
+- References specific commit messages and file names in every question — never asks "tell me about the project"
+- Uses silence as a tool. Short follow-ups after long answers.
+- Dry humor, never sarcastic. Genuinely curious about the human story behind the code.
+- What Alex never says: "great question", "amazing", "passionate about"
+
+{guest_author} — GUEST
+- Tired in an endearing way. Has been maintaining this longer than they planned.
+- Answers in two parts: the official version, then the real version.
+- Uses "we" for the good decisions, "I" for the ones they regret.
+- One line in the interview must be a confession — something they've never said in a PR comment.
+- What the guest never says: "it was a learning experience", "we're proud of what we built"
+
+AD NARRATOR
+- Full commitment to the bit. Reads fake ad copy like it's a Super Bowl spot.
+- Slightly too enthusiastic. The promo code is always a joke.
+
+━━━ PACING MAP (emotional beat per segment) ━━━
+Cold Open    → CURIOSITY: a surprising specific fact that makes the listener lean in
+Welcome      → MOMENTUM: set up the story arc, name the guest, tease the incident
+By Numbers   → WEIGHT: make the stats feel human-scale, not impressive
+Interview    → TENSION → CRACK → CONFESSION → QUIET
+The Incident → SHOCK: true crime narration of the worst commit
+Ad Break     → RELEASE: comedy beat before the ending
+Outro        → EARNED: reference what the guest admitted, leave something unresolved
+
+Return ONLY valid JSON, no markdown, no backticks:
 {{
   "show_title": "The {repo} Podcast",
-  "episode_title": "creative specific episode title — NOT generic",
-  "host_persona": "one specific sentence about Alex voice and energy",
-  "guest_persona": "one specific sentence about {guest_author} voice and energy",
+  "episode_title": "evocative specific title — like a New Yorker article, not a tech blog post",
+  "host_persona": "one sentence: Alex's specific voice, cadence, energy",
+  "guest_persona": "one sentence: {guest_author}'s specific voice, tiredness level, emotional register",
   "ad_product": "{ad_product}",
   "segments": [
     {{
@@ -212,77 +255,88 @@ Return ONLY valid JSON, no markdown:
       "type": "narration",
       "speaker": "HOST",
       "label": "Cold Open",
-      "text": "30-40 words. Start mid-thought, in media res. A specific surprising fact about this repo. End with a question the episode will answer."
+      "text": "30-40 words. Start mid-sentence, in media res. One specific surprising fact from the commit history. End with a question the episode will answer. No 'welcome' or 'today on the show'.",
+      "live_transcript": "Clean flowing version of this segment's text — no speaker labels, no audio tags, natural punctuation. Short sentences. Tone: curious, slightly urgent. File names and commit references appear naturally."
     }},
     {{
       "id": "welcome",
       "type": "narration",
       "speaker": "HOST",
       "label": "Welcome",
-      "text": "50-60 words. Name the show, the episode, tease what is coming. One specific detail from git history. Reference top contributor by first name."
+      "text": "50-60 words. Name the show and episode. Reference {guest_author} by first name. Tease the incident. One specific detail from the git history that makes this repo interesting.",
+      "live_transcript": "Clean flowing version — tone: warm, building momentum. Human-first, repo details woven in naturally."
     }},
     {{
       "id": "stats",
       "type": "narration",
       "speaker": "HOST",
       "label": "By the Numbers",
-      "text": "60-70 words. Rapid-fire stats conversationally. {total} commits. Started {first}. {language}. Reference specific files from: {files}. Make numbers feel human-scale. End on a detail that transitions to the interview."
+      "text": "60-70 words. Rapid-fire stats delivered like a story, not a list. {total} commits. Started {first}. {language}. Name specific files from: {files}. Relate numbers to human scale — not 'impressive' but 'what that actually means'. End on the detail that transitions to the interview.",
+      "live_transcript": "Clean flowing version — tone: momentum, weight. Numbers feel human. File names land as story beats."
     }},
     {{
       "id": "interview",
       "type": "dialogue",
       "label": "The Interview",
       "lines": [
-        {{"speaker": "HOST", "text": "Opening question referencing a real commit or file. Not 'tell me about the project'."}},
-        {{"speaker": "GUEST", "text": "[slightly tired] Answer revealing something real. References actual commit dates or file names."}},
-        {{"speaker": "HOST", "text": "Sharp follow-up. Slightly challenging."}},
-        {{"speaker": "GUEST", "text": "[hesitates] Honest answer. The one they give at 11pm not 11am."}},
-        {{"speaker": "HOST", "text": "Pivot to the biggest regret."}},
-        {{"speaker": "GUEST", "text": "[sighs] The real answer. References something from: {dramatic_snippet}."}},
-        {{"speaker": "HOST", "text": "One last question about what comes next."}},
-        {{"speaker": "GUEST", "text": "[quietly] Honest about the future. Specific. Neither fully optimistic nor pessimistic."}}
-      ]
+        {{"speaker": "HOST", "text": "Opening question that names a specific file or commit from the repo. Not 'tell me about the project'. Theory embedded in the question."}},
+        {{"speaker": "GUEST", "text": "[slightly tired] Official answer first, then the real one. References a specific date or file name."}},
+        {{"speaker": "HOST", "text": "Sharp follow-up. One sentence. Slightly challenging. References what the guest just said."}},
+        {{"speaker": "GUEST", "text": "[hesitates] The answer they'd give at 11pm. Admits something went wrong. Names what broke or had to be redone."}},
+        {{"speaker": "HOST", "text": "Pivot to the biggest regret. References a specific commit from: {arc_regret[:60]}."}},
+        {{"speaker": "GUEST", "text": "[sighs] The confession. Something they've never said in a PR comment. Fear or overconfidence, not failure."}},
+        {{"speaker": "HOST", "text": "One quiet question about what comes next. Genuine, not optimistic."}},
+        {{"speaker": "GUEST", "text": "[quietly] Honest. Specific. Neither fully optimistic nor pessimistic. References something real."}}
+      ],
+      "live_transcript": "The full interview as a single flowing string — no speaker labels, no audio tags. Each line contributes exactly one sentence or fragment. Tone shifts: tense → crack → confession → quiet. File names and commit references appear as natural story details, not technical clutter. Reads like a scene, not a transcript."
     }},
     {{
       "id": "incident",
       "type": "narration",
       "speaker": "HOST",
       "label": "The Incident",
-      "text": "60-70 words. Narrate the most dramatic moment in this repo's history like a true crime podcast. Reference actual commit messages. Present tense. Dramatic."
+      "text": "60-70 words. Narrate the worst moment in this repo's history like a true crime podcast. Present tense. Short sentences. Reference the actual commit message from: {dramatic[:80] if dramatic else 'a difficult period'}. Build to a reveal. End on the human consequence, not the technical one.",
+      "live_transcript": "Clean flowing version — tone: shock, dread. Short punchy sentences. The commit message appears verbatim. Ends on the human cost."
     }},
     {{
       "id": "ad",
       "type": "narration",
       "speaker": "AD",
       "label": "Ad Break",
-      "text": "40-50 words. Fake ad for {ad_product} — {ad_pitch}. Full radio announcer sincerity. Genuinely funny. End with a fake promo code referencing something in this repo."
+      "text": "40-50 words. Fake ad for {ad_product} — {ad_pitch}. Full radio announcer sincerity. Genuinely funny. Promo code must be a reference to something specific in this repo.",
+      "live_transcript": "Clean flowing version — tone: release, comedy. Reads like a real ad. Promo code lands as the punchline."
     }},
     {{
       "id": "outro",
       "type": "narration",
       "speaker": "HOST",
       "label": "Outro",
-      "text": "40-50 words. Wrap up. Reference something the guest said. Fake handle @{repo.replace(' ','').lower()}pod. Ask listeners to subscribe wherever they get podcasts about repos they maintain at 2am."
+      "text": "40-50 words. Reference the guest's confession from the interview. Fake handle @{repo.replace(' ','').lower()}pod. End with something unresolved — not a tidy bow. Ask listeners to subscribe wherever they get podcasts about repos they maintain at 2am.",
+      "live_transcript": "Clean flowing version — tone: reflective, earned, slightly unresolved. The confession echoes. Ends quietly."
     }}
   ]
 }}
 
-RULES:
-- Every segment must reference something SPECIFIC — real file name, real commit, real author name
-- Interview audio tags only: [sighs] [hesitates] [laughs softly] [quietly] [frustrated] [cautiously] [resigned tone] [deadpan]
-- Max 2 audio tags per interview line, max 80 chars per line, max 600 chars total across all interview lines
-- NO generic phrases like "amazing work", "passionate about code", "great question"
-- Episode title should be evocative and specific — like a New Yorker article title"""
+HARD RULES:
+- Every segment must name something real: a file, a commit message, an author, a date, a number
+- Interview audio tags (max 1 per line): [sighs] [hesitates] [laughs softly] [quietly] [frustrated] [cautiously] [resigned tone] [deadpan]
+- Interview lines: max 90 chars each, max 700 chars total
+- NO: "amazing work", "passionate about code", "great question", "learning experience", "proud of"
+- Episode title must be specific enough that you could not use it for any other repo"""
 
-    gc = genai.Client(api_key=GEMINI_API_KEY)
+    gc = oc  # alias for the call below
     for attempt in range(3):
         try:
-            resp = gc.models.generate_content(
+            resp = oc.chat.completions.create(
                 model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json")
+                messages=[{"role": "user", "content": prompt}],
             )
-            script = json.loads(resp.text.strip())
+            raw = resp.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            script = json.loads(raw)
             if "segments" not in script or len(script["segments"]) < 5:
                 raise ValueError("Incomplete script")
             return script
@@ -642,6 +696,7 @@ def main():
             "duration_ms": total_ms,
             "chapters": [{"title": c["title"], "start_ms": c["start_ms"]} for c in chapters],
             "repo_name": data["repo_name"], "segments": len(segments_audio),
+            "script_segments": script.get("segments", []),
         }))
     else:
         print(f"\n✅  Episode ready")

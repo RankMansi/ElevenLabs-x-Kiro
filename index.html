@@ -16,8 +16,8 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 #letterbox-top{top:0;border-bottom:1px solid rgba(200,160,60,0.12)}
 #letterbox-bottom{bottom:0;border-top:1px solid rgba(200,160,60,0.12)}
 #canvas-bg{position:fixed;inset:0;z-index:0}
-#gargantua-wrap{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;pointer-events:none;width:min(700px,90vw);aspect-ratio:1;}
-#gargantua-canvas{width:100%;height:100%}
+#gargantua-wrap{position:fixed;inset:0;z-index:1;pointer-events:none;}
+#gargantua-canvas{width:100%;height:100%;display:block}
 #app{position:relative;z-index:10;min-height:100vh;display:flex;flex-direction:column;padding:52px 0 52px;}
 #opening{position:fixed;inset:0;z-index:500;background:var(--black);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
 #opening .studio-line{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.5em;color:var(--dim);text-transform:uppercase;opacity:0;animation:fade-in .8s ease forwards;}
@@ -132,7 +132,7 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 </style>
 </head>
 <body>
-<div id="letterbox-top"><div id="hud-badge" class="hud-badge" style="display:none">ECHOES PODCAST · TRANSMISSION ACTIVE</div></div>
+<div id="letterbox-top"><div id="hud-badge" class="hud-badge">MISSION CONTROL · READY</div></div>
 <div id="letterbox-bottom"></div>
 <canvas id="canvas-bg"></canvas>
 <div id="gargantua-wrap"><canvas id="gargantua-canvas"></canvas></div>
@@ -292,7 +292,18 @@ function animBar(bId,vId,target){const b=document.getElementById(bId),v=document
 async function pollStatus(){if(!jobId)return;try{const r=await fetch(`/api/podcast/status/${jobId}`);if(!r.ok)return;const d=await r.json();if(d.status==='done'){clearInterval(pollT);clearInterval(elapsed);setTimeout(()=>showEpisode(d.result),800)}else if(d.status==='error'){clearInterval(pollT);clearInterval(elapsed);goBack();showErr(d.error||'Error')}}catch(e){}}
 
 let epAudio=null,vizRAF=null,chaps=[],mouthT=null,interviewT=null,lastChIdx=-1;
-function showEpisode(data){chaps=data.chapters||[];document.getElementById('ep-title').textContent=data.episode_title||data.show_title||'Untitled';document.getElementById('ep-meta').innerHTML=`${data.repo_name||'REPO'}<br>${data.commit_count||0} COMMITS<br>${chaps.length} CHAPTERS<br>${fmtMs(data.duration_ms||0)}`;document.getElementById('p-ep').textContent=(data.episode_title||'').slice(0,40);const blk=document.getElementById('chapters-block');blk.innerHTML='';chaps.slice(0,4).forEach((ch,i)=>{const d=document.createElement('div');d.className='chapter-item';d.id='ch-'+i;d.innerHTML=`<div class="ch-num">0${i+1}</div><div class="ch-time">${fmtMs(ch.start_ms)}</div><div class="ch-title">${ch.title}</div><div class="ch-bar"></div>`;d.onclick=()=>{if(epAudio){epAudio.currentTime=ch.start_ms/1000;epAudio.play()}};blk.appendChild(d)});epAudio=document.getElementById('audio');epAudio.src=data.audio_url;document.getElementById('dl-link').href=data.audio_url;epAudio.addEventListener('loadedmetadata',()=>updateTime());epAudio.addEventListener('timeupdate',onTimeUpdate);epAudio.addEventListener('play',()=>{document.getElementById('play-btn').textContent='⏸';startWaveform()});epAudio.addEventListener('pause',()=>{document.getElementById('play-btn').textContent='▶';clearMouth()});epAudio.addEventListener('ended',()=>{document.getElementById('play-btn').textContent='▶';clearMouth()});showScreen('s-episode');document.getElementById('hud-badge').textContent='ECHOES PODCAST · TRANSMISSION PLAYING';setSubtitle('alex','Welcome to the episode.');setTimeout(()=>epAudio.play().catch(()=>{}),600)}
+function showEpisode(data){chaps=data.chapters||[];document.getElementById('ep-title').textContent=data.episode_title||data.show_title||'Untitled';document.getElementById('ep-meta').innerHTML=`${data.repo_name||'REPO'}<br>${data.commit_count||0} COMMITS<br>${chaps.length} CHAPTERS<br>${fmtMs(data.duration_ms||0)}`;document.getElementById('p-ep').textContent=(data.episode_title||'').slice(0,40);
+
+  // Build per-chapter live transcripts from segment live_transcript fields
+  window._segTranscripts = {};
+  if(data.script_segments){
+    data.script_segments.forEach(seg=>{
+      const label=(seg.label||seg.id||'').toLowerCase();
+      window._segTranscripts[label]=seg.live_transcript||seg.text||'';
+    });
+  }
+  // Also store top-level live_transcript for echoes drama mode
+  window._dramaTranscript = data.live_transcript||'';const blk=document.getElementById('chapters-block');blk.innerHTML='';chaps.slice(0,4).forEach((ch,i)=>{const d=document.createElement('div');d.className='chapter-item';d.id='ch-'+i;d.innerHTML=`<div class="ch-num">0${i+1}</div><div class="ch-time">${fmtMs(ch.start_ms)}</div><div class="ch-title">${ch.title}</div><div class="ch-bar"></div>`;d.onclick=()=>{if(epAudio){epAudio.currentTime=ch.start_ms/1000;epAudio.play()}};blk.appendChild(d)});epAudio=document.getElementById('audio');epAudio.src=data.audio_url;document.getElementById('dl-link').href=data.audio_url;epAudio.addEventListener('loadedmetadata',()=>updateTime());epAudio.addEventListener('timeupdate',onTimeUpdate);epAudio.addEventListener('play',()=>{document.getElementById('play-btn').textContent='⏸';startWaveform()});epAudio.addEventListener('pause',()=>{document.getElementById('play-btn').textContent='▶';clearMouth()});epAudio.addEventListener('ended',()=>{document.getElementById('play-btn').textContent='▶';clearMouth()});showScreen('s-episode');document.getElementById('hud-badge').textContent='ECHOES PODCAST · TRANSMISSION PLAYING';setSubtitle('alex','Welcome to the episode.');setTimeout(()=>epAudio.play().catch(()=>{}),600)}
 
 function onTimeUpdate(){const ms=epAudio.currentTime*1000,dur=epAudio.duration*1000||1;document.getElementById('prog-fill').style.width=(ms/dur*100).toFixed(2)+'%';updateTime();let ci=chaps.length-1;for(let i=0;i<chaps.length;i++){if(chaps[i].start_ms>ms){ci=i-1;break}}if(ci<0)ci=0;document.querySelectorAll('.chapter-item').forEach((el,i)=>el.classList.toggle('active',i===ci));if(ci!==lastChIdx){lastChIdx=ci;onChapter(chaps[ci])}}
 
@@ -300,8 +311,29 @@ const SEG_MAP={'cold open':{who:'alex',mode:'solo'},'welcome':{who:'alex',mode:'
 function mapSeg(title){const t=title.toLowerCase();for(const[k,v]of Object.entries(SEG_MAP)){if(t.includes(k))return v}return{who:'alex',mode:'solo'}}
 
 let iToggle=false;
-function onChapter(ch){clearAllTimers();const seg=mapSeg(ch.title);if(seg.mode==='both'){iToggle=false;doInterviewState();interviewT=setInterval(()=>{iToggle=!iToggle;doInterviewState()},4200);setSubtitle('both','On the record. Tell me what really happened.')}else if(seg.mode==='ad'){setSpeaker(null);setSubtitle('ad','This segment brought to you by code that definitely works in production.')}else{setSpeaker('alex');const lines={'cold open':'The codebase before you has seen things.','welcome':"Welcome to Echoes Podcast. I'm your host, Alex.",'by the numbers':'Let me give you the stats. They\'re illuminating.','incident':'And then there was... the incident.','outro':"That's all for today's transmission. Until next time."};const t=ch.title.toLowerCase();for(const[k,v]of Object.entries(lines)){if(t.includes(k)){setSubtitle('alex',v);break}}}startMouth(seg)}
-function doInterviewState(){if(iToggle){setSpeaker('dev');setSubtitle('dev','[sighs] I knew it was wrong when I shipped it.')}else{setSpeaker('alex');setSubtitle('alex','Tell me — what does that commit actually mean?')}}
+function onChapter(ch){clearAllTimers();const seg=mapSeg(ch.title);
+  // Pull live_transcript for this chapter if available
+  const chLabel=ch.title.toLowerCase();
+  const liveText=window._segTranscripts&&Object.keys(window._segTranscripts).find(k=>chLabel.includes(k));
+  const transcript=liveText?(window._segTranscripts[liveText]||''):'';
+
+  if(seg.mode==='both'){iToggle=false;doInterviewState(transcript);interviewT=setInterval(()=>{iToggle=!iToggle;doInterviewState(transcript)},4200);if(!transcript)setSubtitle('both','On the record. Tell me what really happened.')}
+  else if(seg.mode==='ad'){setSpeaker(null);setSubtitle('ad',transcript||'This segment brought to you by code that definitely works in production.')}
+  else{setSpeaker('alex');
+    const fallbacks={'cold open':'The codebase before you has seen things.','welcome':"Welcome to Echoes Podcast. I'm your host, Alex.",'by the numbers':'Let me give you the stats.','incident':'And then there was... the incident.','outro':"That's all for today's transmission."};
+    const t=ch.title.toLowerCase();
+    const fallback=Object.entries(fallbacks).find(([k])=>t.includes(k));
+    setSubtitle('alex',transcript||(fallback?fallback[1]:''));
+  }
+  startMouth(seg)}
+function doInterviewState(transcript){
+  // Split transcript into sentences for alternating display
+  const sentences=(transcript||'').split(/(?<=[.!?…])\s+/).filter(s=>s.trim());
+  const idx=iToggle?1:0;
+  const line=sentences[idx%Math.max(sentences.length,1)]||'';
+  if(iToggle){setSpeaker('dev');setSubtitle('dev',line||'[sighs] I knew it was wrong when I shipped it.')}
+  else{setSpeaker('alex');setSubtitle('alex',line||'Tell me — what does that commit actually mean?')}
+}
 function setSpeaker(who){document.getElementById('panel-alex').classList.toggle('active-speaker',who==='alex'||who==='both');document.getElementById('panel-dev').classList.toggle('active-speaker',who==='dev'||who==='both')}
 function setSubtitle(who,text){const wEl=document.getElementById('sub-who'),tEl=document.getElementById('sub-typed');const map={alex:'ALEX — HOST',dev:'DEV — GUEST',both:'INTERVIEW SEGMENT',ad:'SPONSORED CONTENT'};const cls={alex:'alex-who',dev:'dev-who',both:'alex-who',ad:'ad-who'};wEl.className='sub-who '+(cls[who]||'');wEl.textContent=map[who]||who.toUpperCase();if(window._subT)clearInterval(window._subT);tEl.textContent='';let i=0;window._subT=setInterval(()=>{tEl.textContent=text.slice(0,++i);if(i>=text.length)clearInterval(window._subT)},14)}
 let mouthFlip=false;

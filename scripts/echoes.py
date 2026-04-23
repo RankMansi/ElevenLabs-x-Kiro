@@ -82,13 +82,13 @@ def get_repo_history(repo_dir=None):
 
 
 def generate_repo_drama_script(commits, stats):
-    from google import genai
-    from google.genai import types
+    import openai as _openai
 
-    # gemini-2.0-flash: free tier, 1500 req/day, no billing required
-    MODEL = "gemini-2.5-flash"
-
-    gc          = genai.Client(api_key=GEMINI_API_KEY)
+    puter_token = os.getenv("PUTER_AUTH_TOKEN")
+    oc = _openai.OpenAI(
+        base_url="https://api.puter.com/puterai/openai/v1/",
+        api_key=puter_token,
+    )
     repo_name   = stats.get("repo_name", "this repo")
     total       = stats.get("total_commits", len(commits))
     top_authors = stats.get("top_authors", [])
@@ -105,85 +105,116 @@ def generate_repo_drama_script(commits, stats):
         sample.append(commits[i])
     sample_str = "\n".join([f"- {c['date']}: [{c['author']}] {c['subject']}" for c in sample[:15]])
 
-    prompt = f"""You are a playwright writing a 60-second radio drama. Not a code review. Not a retrospective. A DRAMA.
+    # Build story arc from commit history
+    # Early = excitement, middle = pressure, late = regret
+    early   = [c for c in commits if "init" in c["subject"].lower() or "add" in c["subject"].lower()][:2]
+    messy   = [c for c in commits if any(k in c["subject"].lower() for k in ["fix","hack","temp","wip","quick"])][:3]
+    regret  = [c for c in commits if any(k in c["subject"].lower() for k in ["revert","broken","oops","wrong","sorry"])][:2]
 
-The setting: two engineers who built '{repo_name}' together are having a raw, unfiltered conversation at 11pm after a bad production incident. They've had one drink. {total} commits. Started {first}. Exhausted. Finally saying what they actually think.
+    arc_str = ""
+    if early:   arc_str += f"\nEARLY (excitement): " + " | ".join(c["subject"] for c in early)
+    if messy:   arc_str += f"\nMIDDLE (pressure):  " + " | ".join(c["subject"] for c in messy)
+    if regret:  arc_str += f"\nLATE (regret):      " + " | ".join(c["subject"] for c in regret)
+    if not arc_str: arc_str = sample_str
 
-Repo facts:
-- Top contributors: {authors_str}
-- Most-changed files: {files_str}
-- Real commits across the project's life:
-{sample_str}
+    prompt = f"""You are writing a 60-second scene. Not a code review. Not a retrospective. A scene between two people who built something together and are finally being honest about it.
 
-AUTHOR = {a1}. Most commits. Built the foundation. Proud but haunted by every shortcut they took. Gets defensive when challenged, then quietly honest.
+SETTING: {repo_name}. {total} commits. Started {first}. It's 11pm. There was an incident today. They've had one drink. The conversation has been going for ten minutes already — we're joining mid-argument.
 
-READER = {a2}. Joined later. Inherited the mess. Respects {a1} but is genuinely frustrated — maintains code whose reasoning died in Slack threads that were never written down.
+━━━ VOICE BIBLE ━━━
 
-RULES FOR GREAT DRAMA:
+{a1} — AUTHOR
+- Speaks in short declarative sentences. Never asks questions.
+- Defends by explaining context, not by denying fault.
+- Uses "we" when things went well, "I" when things went wrong.
+- Never says "I'm sorry" but sometimes goes quiet mid-sentence.
+- Interrupts when cornered. Trails off when honest.
+- What they never say directly: that they were scared it wouldn't matter.
 
-1. SPECIFICITY OVER GENERALITY.
-   Bad: "the architecture feels brittle."
-   Good: "[frustrated] Why does {first_file} import from three different places? Pick one."
-   Name real files. Quote real commit messages. Use real author names.
+{a2} — READER
+- Speaks in questions that already contain the answer.
+- Uses specific file names and commit messages as evidence, not as complaints.
+- Dry. Not cruel. The frustration comes from caring, not contempt.
+- Pauses before the hardest lines.
+- What they never say directly: that they actually admire what was built.
 
-2. EMOTIONAL ESCALATION. Surface frustration → crack open into something real by line 8.
-   AUTHOR must have one genuine admission they've never said out loud.
-   READER must have one moment where they almost apologize for pushing too hard.
+━━━ STORY ARC ━━━
+{arc_str}
 
-3. SUBTEXT. The real question under all of it: "Did we make something worth making?"
-   Never say this out loud. Let it live beneath every line.
+Most-changed files (the ones nobody wants to touch): {files_str}
 
-4. VOICE DISTINCTION.
-   AUTHOR: justifications that slowly unravel under pressure.
-   READER: questions that already contain the answer.
+━━━ THE SCENE ━━━
 
-5. THE TURN. Around line 7-8, a real admission stops the argument cold.
-   Something that could never go in a pull request comment.
+Follow this emotional arc across 10-12 lines:
+1-2: Surface tension — a specific file or commit is the trigger
+3-4: First real accusation — READER names something that broke or had to be redone
+5-6: AUTHOR's defense starts to crack — they justify, then hesitate
+7-8: THE TURN — AUTHOR admits something they've never said in a PR comment. Fear, not failure.
+9-10: READER almost apologizes. Doesn't quite.
+11-12 (optional): One line each. Quiet. The argument is over but nothing is resolved.
 
-EXAMPLES OF THE EXACT TONE:
-- "[quietly] I knew the eval runner was wrong when I shipped it. I just needed the demo to work."
-- "[laughs softly] You spent three weeks on that abstraction. I merged it in ten minutes."
-- "[hesitates] The commits don't show how scared we were that none of it would matter."
-- "[resigned tone] We kept saying we'd come back and fix it. We never came back."
-- "[frustrated] Every 'quick fix' commit is a scar. There are forty-three of them."
+━━━ WHAT TO WRITE ABOUT ━━━
+Not: "the architecture", "the design", "the codebase"
+Yes: what broke in production, what someone had to redo at 2am, what got shipped too fast, what the team kept avoiding, what the commit message didn't say
 
-FORBIDDEN — these will make it bad:
-- Generic tech words: "brittle", "pile on", "core design", "technical debt"
-- Ending with a vague philosophical question like "what now?"
-- Corporate retrospective language
-- Any line that could appear in a JIRA ticket or Confluence page
-- Anything theoretical — every single line must be visceral and specific
+━━━ TONE EXAMPLES ━━━
+"[quietly] I knew {first_file} was wrong when I pushed it. I just needed the demo to work."
+"[laughs softly] You spent three weeks on that abstraction. I merged it in ten minutes."
+"[hesitates] The commits don't show how scared we were that none of it would matter."
+"[frustrated] There are {total} commits in this repo. How many of them say 'fix'?"
+"[resigned tone] We kept saying we'd come back. We never came back."
+
+━━━ FORBIDDEN ━━━
+- "brittle", "technical debt", "core design", "pile on", "architecture"
+- Ending with a question like "what now?" or "where do we go from here?"
+- Any line that could appear in a Confluence page or sprint retro
+- Two lines in a row with the same emotion
+- Generic praise or generic blame
 
 Return ONLY valid JSON, no markdown, no backticks:
 {{
-  "author_persona": "one sentence: voice, age, energy, emotional register — be specific (e.g. 'a tired 40-year-old with a slight accent who speaks in short declarative sentences when cornered')",
-  "reader_persona": "one sentence: voice, age, energy, emotional register — be specific",
+  "author_persona": "one sentence — specific voice, age, energy, emotional register. Example: 'a tired 44-year-old who speaks in short bursts and goes quiet when cornered'",
+  "reader_persona": "one sentence — specific voice, age, energy, emotional register",
   "lines": [
-    {{"speaker": "AUTHOR", "text": "dialogue with inline v3 audio tags"}},
-    {{"speaker": "READER", "text": "dialogue with inline v3 audio tags"}}
-  ]
+    {{"speaker": "AUTHOR", "text": "line with at most one audio tag"}},
+    {{"speaker": "READER", "text": "line with at most one audio tag"}}
+  ],
+  "live_transcript": "A single continuously flowing string of the full conversation — no speaker labels, no audio tags, natural punctuation only. Written as if it's scrolling in real-time on a screen while the audio plays. Short sentences. Emotionally expressive. Tense where the argument is tense, quiet where it goes quiet. File names and commit references appear naturally in the flow — not as technical clutter but as the specific details that make it feel real. Every dialogue line must contribute exactly one sentence or fragment to this transcript. No extra content."
 }}
 
-HARD RULES:
-1. Exactly 10-12 lines
-2. Max 1800 total chars across ALL text values — punchy, not wordy
-3. Audio tags ONLY from: [sighs] [frustrated] [resigned tone] [laughing] [whispers]
-   [cautiously] [cheerfully] [deadpan] [giggling] [groaning] [hesitates] [sarcastic]
-   [jumping in] [elated] [quizzically] [quietly] [softly] [laughs softly]
-4. Interruption: end line with dash "-"
-5. Trailing thought: end with "..."
-6. speaker must be exactly "AUTHOR" or "READER"
-7. Max 2 audio tags per line
-8. Every line references something real — a filename, a commit message, an author name, a date"""
+HARD CONSTRAINTS:
+- 10-12 lines, alternating speakers
+- Max 1800 total chars across all text values
+- Audio tags (max 1 per line): [sighs] [frustrated] [resigned tone] [laughing] [whispers] [cautiously] [deadpan] [hesitates] [sarcastic] [quietly] [laughs softly]
+- Interruption: end with dash —
+- Trailing thought: end with ...
+- Every line must name something real: a file, a commit message, an author, a date, a number"""
 
     for attempt in range(3):
         try:
-            resp = gc.models.generate_content(
-                model=MODEL, contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json")
+            resp = oc.chat.completions.create(
+                model="gemini-2.5-flash",
+                messages=[{"role": "user", "content": prompt}],
             )
-            script = json.loads(resp.text.strip())
+            raw = resp.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            script = json.loads(raw)
             if "lines" not in script: raise ValueError("No lines")
+
+            # Post-check: reject weak scripts
+            all_text = " ".join(l["text"] for l in script["lines"]).lower()
+            weak_words = ["architecture", "technical debt", "brittle", "pile on", "core design"]
+            weak_count = sum(1 for w in weak_words if w in all_text)
+            real_refs = sum(1 for l in script["lines"]
+                           if any(f.lower() in l["text"].lower() for f, _ in hot_files[:3])
+                           or any(c["subject"][:10].lower() in l["text"].lower() for c in commits[:5]))
+            if weak_count > 1 or real_refs < 2:
+                if attempt < 2:
+                    raise ValueError(f"Script too generic (weak:{weak_count}, refs:{real_refs}), retrying")
+
             total_chars = sum(len(l["text"]) for l in script["lines"])
             while total_chars > 1900 and len(script["lines"]) > 4:
                 script["lines"].pop()
